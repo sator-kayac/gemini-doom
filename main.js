@@ -96,6 +96,7 @@ const lastTouchPositions = new Map(); // Map<identifier, {x, y}> (for continuous
 let touchTurnAmount = 0; // For camera rotation
 let touchMoveForward = false;
 let touchMoveBackward = false;
+const strafeDisplacements = new Map(); // Map<identifier, dx>
 
 let RP = 0; // Right Power for analog control
 let LP = 0; // Left Power for analog control
@@ -111,6 +112,7 @@ function onTouchStart(event) {
         activeTouches.set(touch.identifier, touch);
         initialTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
         lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+        strafeDisplacements.set(touch.identifier, 0); // Initialize strafe displacement
 
         const screenHalf = window.innerWidth / 2;
         if (touch.clientX < screenHalf) {
@@ -126,22 +128,28 @@ function onTouchMove(event) {
     event.preventDefault();
     for (let i = 0; i < event.changedTouches.length; i++) {
         const touch = event.changedTouches[i];
+        const initialPos = initialTouchPositions.get(touch.identifier);
         const prevPos = lastTouchPositions.get(touch.identifier);
-        if (prevPos) {
-            const deltaY = touch.clientY - prevPos.y; // Vertical movement
 
+        if (initialPos && prevPos) {
+            // --- Strafe Calculation (Horizontal) ---
+            const dx = touch.clientX - initialPos.x;
+            strafeDisplacements.set(touch.identifier, dx);
+
+            // --- RP/LP Calculation (Vertical) ---
+            const deltaY = touch.clientY - prevPos.y;
             const screenHalf = window.innerWidth / 2;
-            const sensitivity = 0.5; // Adjust sensitivity for RP/LP change
+            const sensitivity = 0.5;
 
             if (touch.clientX < screenHalf) {
-                LP += -deltaY * sensitivity; // Up-swipe (negative deltaY) increases LP
-                LP = Math.max(-100, Math.min(100, LP)); // Cap LP
+                LP += -deltaY * sensitivity;
+                LP = Math.max(-100, Math.min(100, LP));
             } else {
-                RP += -deltaY * sensitivity; // Up-swipe (negative deltaY) increases RP
-                RP = Math.max(-100, Math.min(100, RP)); // Cap RP
+                RP += -deltaY * sensitivity;
+                RP = Math.max(-100, Math.min(100, RP));
             }
+            lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
         }
-        lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
     }
     updateTouchMovement();
 }
@@ -153,13 +161,13 @@ function onTouchEnd(event) {
         activeTouches.delete(touch.identifier);
         initialTouchPositions.delete(touch.identifier);
         lastTouchPositions.delete(touch.identifier);
+        strafeDisplacements.delete(touch.identifier); // Clear strafe displacement on release
+    }
 
-        const screenHalf = window.innerWidth / 2;
-        if (touch.clientX < screenHalf) {
-            LP = 0;
-        } else {
-            RP = 0;
-        }
+    // If no touches are active after this event, reset all power values
+    if (activeTouches.size === 0) {
+        RP = 0;
+        LP = 0;
     }
     updateTouchMovement();
 }
@@ -170,17 +178,14 @@ function updateTouchMovement() {
     touchMoveBackward = false;
     touchTurnAmount = 0;
 
-    totalPower = RP + LP;
-    diffPower = RP - LP;
+    const totalPower = RP + LP;
+    const diffPower = RP - LP;
 
     // Turning Logic
-    const turnSensitivity = 0.0005; // Adjust as needed (reduced to 1/10 of original)
-    if (diffPower > 0) {
-        // RP > LP: Left turn (positive diffPower, so positive touchTurnAmount for left turn)
-        touchTurnAmount = diffPower * turnSensitivity;
-    } else if (diffPower < 0) {
-        // LP > RP: Right turn (negative diffPower, so negative touchTurnAmount for right turn)
-        touchTurnAmount = diffPower * turnSensitivity;
+    const turnSensitivity = 0.00075; // Adjust as needed (reduced to 1/10 of original)
+    if (diffPower !== 0) { // Only apply turning if there's a difference
+        const signedDiffPower = Math.sign(diffPower) * Math.sqrt(Math.abs(diffPower));
+        touchTurnAmount = signedDiffPower * turnSensitivity;
     }
 
     // Forward/Backward Movement Logic
@@ -454,6 +459,24 @@ function spawnEnemy() {
     const isShooter = Math.random() < 0.25; // 25%の確率で射撃タイプ
     const enemy = createSimpleEnemy(isShooter);
     enemy.isShooter = isShooter;
+
+    if (isShooter) {
+        enemy.hp = 2; // 赤は2発
+        enemy.maxHp = 2;
+        enemy.originalColor = new THREE.Color(0xff0000);
+    } else {
+        enemy.hp = 3; // 緑は3発
+        enemy.maxHp = 3;
+        enemy.originalColor = new THREE.Color(0x00ff00);
+    }
+    enemy.flashTimer = 0; // 被弾フラッシュ用タイマー
+
+    const healthBar = createHealthBar();
+    healthBar.position.y = 2.8; // 頭の上に調整
+    healthBar.visible = false; // 最初は非表示
+    enemy.add(healthBar);
+    enemy.healthBar = healthBar; // 後から参照できるように保持
+
     enemy.lastShotTime = 0; // 最後に撃った時間
     enemy.lastPathUpdateTime = 0; // 最後に経路を更新した時間
     enemy.currentPath = []; // 現在の経路
@@ -555,6 +578,42 @@ function spawnItem(position) {
     items.push(item);
 }
 
+function createHealthBar() {
+    const healthBarGroup = new THREE.Group();
+
+    const barWidth = 1.2;
+    const barHeight = 0.1;
+
+    // 背景
+    const bgGeometry = new THREE.PlaneGeometry(barWidth, barHeight);
+    const bgMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 });
+    const healthBarBG = new THREE.Mesh(bgGeometry, bgMaterial);
+    healthBarBG.name = "healthBarBG";
+    healthBarGroup.add(healthBarBG);
+
+    // 前景 (HP) - ジオメトリをずらして左端を原点にする
+    const fgGeometry = new THREE.PlaneGeometry(barWidth, barHeight);
+    fgGeometry.translate(barWidth / 2, 0, 0); 
+    const fgMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const healthBarFG = new THREE.Mesh(fgGeometry, fgMaterial);
+    healthBarFG.name = "healthBarFG";
+    healthBarFG.position.z = 0.001; // Z-fighting対策
+    healthBarGroup.add(healthBarFG);
+
+    // ビルボード処理 (常にカメラを向く)
+    healthBarGroup.onBeforeRender = function(renderer, scene, camera) {
+        this.quaternion.copy(camera.quaternion);
+    };
+
+    // HPを更新してゲージを再描画する関数をuserDataに持たせる
+    healthBarGroup.userData.update = (currentHp, maxHp) => {
+        const hpRatio = Math.max(0, currentHp / maxHp);
+        healthBarFG.scale.x = hpRatio;
+    };
+    
+    return healthBarGroup;
+}
+
 function onMouseDown(event) {
     if (event.button === 0) {
         isFiring = true;
@@ -581,12 +640,12 @@ function fireBullet() {
     bullets.push(bullet);
     lastFireTime = clock.getElapsedTime();
 
-    // マズルフラッシュを表示
-    muzzleFlash.position.copy(camera.position);
-    muzzleFlash.visible = true;
-    setTimeout(() => {
-        muzzleFlash.visible = false;
-    }, 60); // 60ミリ秒後に非表示
+    // マズルフラッシュを表示 (コメントアウト)
+    // muzzleFlash.position.copy(camera.position);
+    // muzzleFlash.visible = true;
+    // setTimeout(() => {
+    //     muzzleFlash.visible = false;
+    // }, 60); // 60ミリ秒後に非表示
 }
 
 function animate() {
@@ -648,8 +707,24 @@ function animate() {
     forward.y = 0;
     forward.normalize();
 
+    const right = _vector3.crossVectors(forward, camera.up).normalize(); // Re-introduced
+
+    // --- New Strafe Logic ---
+    let totalStrafeDisplacement = 0;
+    strafeDisplacements.forEach(dx => {
+        totalStrafeDisplacement += dx;
+    });
+    // The 'strafeAmount' is now the total pixel displacement.
+    // We'll use it to determine the velocity of the strafe.
+    const strafeVelocity = totalStrafeDisplacement * 0.02; // Sensitivity factor
+
     if (touchMoveForward) moveDirection.add(forward);
     if (touchMoveBackward) moveDirection.sub(forward);
+
+    // Add strafing velocity to the movement direction
+    if (strafeVelocity !== 0) {
+        moveDirection.add(right.clone().multiplyScalar(strafeVelocity));
+    }
 
     if (moveDirection.lengthSq() > 0) {
         moveDirection.normalize();
@@ -679,19 +754,22 @@ function animate() {
     // --- Auto-firing Logic ---
     const autoFireCooldown = rapidFireActive ? autoFireRate / 2 : autoFireRate;
     if (elapsedTime - lastFireTime > autoFireCooldown) {
-        const cameraForward = new THREE.Vector3();
+        const cameraForward = _vector1; // Use a pre-allocated vector
         camera.getWorldDirection(cameraForward);
 
         for (let i = 0; i < enemies.length; i++) {
             const enemy = enemies[i];
-            const playerToEnemy = new THREE.Vector3().subVectors(enemy.position, camera.position);
+            const playerToEnemy = _vector2.subVectors(enemy.position, camera.position);
             const distanceToEnemy = playerToEnemy.length();
 
             // Only consider enemies within a certain range (e.g., 20 units)
-            if (distanceToEnemy < 20) {
-                playerToEnemy.normalize();
-                const angleToEnemy = cameraForward.angleTo(playerToEnemy);
-                const autoFireAngle = Math.PI / 18; // 10 degrees (5 degrees on each side)
+            if (distanceToEnemy < 40) {
+                // --- Horizontal Angle Calculation ---
+                const cameraForwardHorizontal = _vector3.copy(cameraForward).setY(0).normalize();
+                const playerToEnemyHorizontal = _vector4.copy(playerToEnemy).setY(0).normalize();
+
+                const angleToEnemy = cameraForwardHorizontal.angleTo(playerToEnemyHorizontal);
+                const autoFireAngle = Math.PI / 18; // 10 degrees
 
                 if (angleToEnemy < autoFireAngle) {
                     // Enemy is within the frontal cone, fire!
@@ -713,45 +791,63 @@ function animate() {
             const enemy = enemies[j];
             _box2.setFromObject(enemy);
             if (_box1.intersectsBox(_box2)) {
-                spawnCoins(enemy.position.clone());
-                
-                // 敵を死亡状態にする
-                enemy.isDying = true;
-                enemy.deathTime = elapsedTime;
-                // 弾の方向に強く、少し上に吹っ飛ぶように調整
-                const blastDirection = bullet.velocity.clone().normalize();
-                blastDirection.y += 0.3; // Y軸方向に少しベクトルを加える
-                enemy.deathVelocity = blastDirection.normalize().multiplyScalar(15); 
-                // ランダムな角速度を設定して回転させる
-                enemy.deathAngularVelocity = new THREE.Vector3(
-                    (Math.random() - 0.5) * 10,
-                    (Math.random() - 0.5) * 10,
-                    (Math.random() - 0.5) * 10
-                );
+                enemy.hp -= 1;
 
-                // 敵の色をグレイスケールに変更
-                enemy.traverse(child => {
-                    if (child.isMesh) {
-                        child.material = child.material.clone(); // マテリアルを複製して他の敵に影響しないようにする
-                        child.material.color.set(0x808080);
-                    }
-                });
+                // HPゲージを更新・表示
+                enemy.healthBar.userData.update(enemy.hp, enemy.maxHp);
+                enemy.healthBar.visible = true;
 
                 scene.remove(bullet);
                 bullets.splice(i, 1);
-                enemies.splice(j, 1); // enemies配列からは削除
-                dyingEnemies.push(enemy); // dyingEnemies配列に追加
-
-                // 確率でアイテムをドロップ
-                if (Math.random() < 0.05) { // 5%の確率
-                    spawnItem(enemy.position.clone());
-                }
-
-                // 敵の最大数を制限
-                if (enemies.length < 8) { // 最大8体まで
-                    spawnEnemy();
-                }
                 bulletRemoved = true;
+
+                if (enemy.hp <= 0) {
+                    // HPが0以下で死亡
+                    spawnCoins(enemy.position.clone());
+                    
+                    // 敵を死亡状態にする
+                    enemy.isDying = true;
+                    enemy.deathTime = elapsedTime;
+                    // 弾の方向に強く、少し上に吹っ飛ぶように調整
+                    const blastDirection = bullet.velocity.clone().normalize();
+                    blastDirection.y += 0.3; // Y軸方向に少しベクトルを加える
+                    enemy.deathVelocity = blastDirection.normalize().multiplyScalar(15); 
+                    // ランダムな角速度を設定して回転させる
+                    enemy.deathAngularVelocity = new THREE.Vector3(
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10
+                    );
+
+                    // 敵の色をグレイスケールに変更
+                    enemy.traverse(child => {
+                        if (child.isMesh) {
+                            child.material = child.material.clone(); // マテリアルを複製して他の敵に影響しないようにする
+                            child.material.color.set(0x808080);
+                        }
+                    });
+
+                    enemies.splice(j, 1); // enemies配列からは削除
+                    dyingEnemies.push(enemy); // dyingEnemies配列に追加
+
+                    // 確率でアイテムをドロップ
+                    if (Math.random() < 0.05) { // 5%の確率
+                        spawnItem(enemy.position.clone());
+                    }
+
+                    // 敵の最大数を制限
+                    if (enemies.length < 8) { // 最大8体まで
+                        spawnEnemy();
+                    }
+                } else {
+                    // HPが残っている場合はフラッシュ
+                    enemy.flashTimer = 0.1; // 0.1秒間フラッシュ
+                    enemy.traverse(child => {
+                        if (child.isMesh && !child.name.startsWith("healthBar")) {
+                            child.material.color.set(0xffffff); // 白色に
+                        }
+                    });
+                }
                 break;
             }
         }
@@ -833,6 +929,20 @@ function animate() {
     
     for (let j = enemies.length - 1; j >= 0; j--) {
         const enemy = enemies[j];
+
+        // フラッシュタイマーの処理
+        if (enemy.flashTimer > 0) {
+            enemy.flashTimer -= delta;
+            if (enemy.flashTimer <= 0) {
+                // フラッシュ終了、元の色に戻す
+                enemy.traverse(child => {
+                    if (child.isMesh && !child.name.startsWith("healthBar")) {
+                        child.material.color.copy(enemy.originalColor);
+                    }
+                });
+            }
+        }
+
         const oldEnemyPos = enemy.position.clone();
         
         // フレームスキップで敵処理を軽量化
