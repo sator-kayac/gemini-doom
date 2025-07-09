@@ -86,6 +86,7 @@ let moveRight = false;
 let isFiring = false;
 let lastFireTime = 0;
 const fireRate = 0.5;
+const autoFireRate = 0.2; // Auto-fire every 0.2 seconds
 
 // --- Touch Control Variables ---
 const activeTouches = new Map(); // Map<identifier, Touch>
@@ -673,6 +674,32 @@ function animate() {
     const currentFireRate = rapidFireActive ? fireRate / 2 : fireRate;
     if (isFiring && (elapsedTime - lastFireTime > currentFireRate)) {
         fireBullet();
+    }
+
+    // --- Auto-firing Logic ---
+    const autoFireCooldown = rapidFireActive ? autoFireRate / 2 : autoFireRate;
+    if (elapsedTime - lastFireTime > autoFireCooldown) {
+        const cameraForward = new THREE.Vector3();
+        camera.getWorldDirection(cameraForward);
+
+        for (let i = 0; i < enemies.length; i++) {
+            const enemy = enemies[i];
+            const playerToEnemy = new THREE.Vector3().subVectors(enemy.position, camera.position);
+            const distanceToEnemy = playerToEnemy.length();
+
+            // Only consider enemies within a certain range (e.g., 20 units)
+            if (distanceToEnemy < 20) {
+                playerToEnemy.normalize();
+                const angleToEnemy = cameraForward.angleTo(playerToEnemy);
+                const autoFireAngle = Math.PI / 18; // 10 degrees (5 degrees on each side)
+
+                if (angleToEnemy < autoFireAngle) {
+                    // Enemy is within the frontal cone, fire!
+                    fireBullet();
+                    break; // Fire at one enemy at a time
+                }
+            }
+        }
     }
 
     for (let i = bullets.length - 1; i >= 0; i--) {
