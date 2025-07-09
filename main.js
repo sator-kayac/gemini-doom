@@ -96,34 +96,50 @@ let touchTurnAmount = 0; // For camera rotation
 let touchMoveForward = false;
 let touchMoveBackward = false;
 
+let RP = 0; // Right Power for analog control
+let LP = 0; // Left Power for analog control
+
+let totalPower = 0; // Global variable for total power
+let diffPower = 0;  // Global variable for differential power
+
 // --- Touch Event Handlers ---
 function onTouchStart(event) {
     event.preventDefault(); // Prevent default browser behavior like scrolling
-    
     for (let i = 0; i < event.changedTouches.length; i++) {
         const touch = event.changedTouches[i];
         activeTouches.set(touch.identifier, touch);
         initialTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
         lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
-        
+
+        const screenHalf = window.innerWidth / 2;
+        if (touch.clientX < screenHalf) {
+            LP = 10; // Left side tap
+        } else {
+            RP = 10; // Right side tap
+        }
     }
     updateTouchMovement();
 }
 
 function onTouchMove(event) {
     event.preventDefault();
-    
     for (let i = 0; i < event.changedTouches.length; i++) {
         const touch = event.changedTouches[i];
         const prevPos = lastTouchPositions.get(touch.identifier);
         if (prevPos) {
-            // Calculate delta for continuous movement/rotation
-            const deltaX = touch.clientX - prevPos.x;
-            const deltaY = touch.clientY - prevPos.y;
-            
+            const deltaY = touch.clientY - prevPos.y; // Vertical movement
 
+            const screenHalf = window.innerWidth / 2;
+            const sensitivity = 0.5; // Adjust sensitivity for RP/LP change
+
+            if (touch.clientX < screenHalf) {
+                LP += -deltaY * sensitivity; // Up-swipe (negative deltaY) increases LP
+                LP = Math.max(-100, Math.min(100, LP)); // Cap LP
+            } else {
+                RP += -deltaY * sensitivity; // Up-swipe (negative deltaY) increases RP
+                RP = Math.max(-100, Math.min(100, RP)); // Cap RP
             }
-        activeTouches.set(touch.identifier, touch);
+        }
         lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
     }
     updateTouchMovement();
@@ -131,153 +147,58 @@ function onTouchMove(event) {
 
 function onTouchEnd(event) {
     event.preventDefault();
-    
     for (let i = 0; i < event.changedTouches.length; i++) {
         const touch = event.changedTouches[i];
         activeTouches.delete(touch.identifier);
         initialTouchPositions.delete(touch.identifier);
         lastTouchPositions.delete(touch.identifier);
-        
+
+        const screenHalf = window.innerWidth / 2;
+        if (touch.clientX < screenHalf) {
+            LP = 0;
+        } else {
+            RP = 0;
+        }
     }
     updateTouchMovement();
 }
 
 function updateTouchMovement() {
-    
-    // Only reset movement flags if no touches are active
-    if (activeTouches.size === 0) {
-        touchMoveForward = false;
-        touchMoveBackward = false;
-        touchTurnAmount = 0; // Reset turn amount only when no touches
-        
-        return;
-    }
-
-    const numActiveTouches = activeTouches.size;
-    
-
-    // Default to no movement, then set based on rules
+    // Reset flags based on RP/LP
     touchMoveForward = false;
     touchMoveBackward = false;
-    touchTurnAmount = 0; // Reset for this frame's calculation
+    touchTurnAmount = 0;
 
-    if (numActiveTouches === 1) {
-        // Rule 1: Single touch for forward + turning
-        touchMoveForward = true;
-        
+    totalPower = RP + LP;
+    diffPower = RP - LP;
 
-        const touch = activeTouches.values().next().value; // Get the single active touch
-        const screenHalf = window.innerWidth / 2;
-        const turnSpeed = 0.05 / 3; // Fixed turning speed, adjust as needed (reduced to 1/3)
-
-        if (touch.clientX < screenHalf) {
-            // Left side touch: turn left (reversed)
-            touchTurnAmount = -turnSpeed; // Negative turnAmount for left turn
-            
-        } else {
-            // Right side touch: turn right (reversed)
-            touchTurnAmount = turnSpeed; // Positive turnAmount for right turn
-            
-        }
-    } else if (numActiveTouches >= 2) {
-        // Rule 1: Both sides touch for straight forward (default for two fingers)
-        touchMoveForward = true;
-        
-
-        // Rule 3: Two-finger swipe down for backward
-        let totalDeltaY = 0;
-        let allSwipedDown = true;
-        activeTouches.forEach((touch, id) => {
-            const initialPos = initialTouchPositions.get(id);
-            const currentPos = { x: touch.clientX, y: touch.clientY };
-            const deltaY = currentPos.y - initialPos.y;
-            totalDeltaY += deltaY;
-            if (deltaY < 20) { // Threshold for "swipe down"
-                allSwipedDown = false;
-            }
-        });
-
-        if (allSwipedDown && totalDeltaY > 40) { // Both fingers swiped down significantly
-            touchMoveForward = false;
-            touchMoveBackward = true;
-            
-        }
-
-        // Rule 2 & Combined Rules: Two-finger rotation/turning
-        const touches = Array.from(activeTouches.values());
-        if (touches.length >= 2) {
-            let gestureDetected = false; // Flag to indicate if a specific gesture is detected
-
-            // Sort touches by X-coordinate to reliably identify left and right fingers
-            const sortedTouches = Array.from(activeTouches.values()).sort((a, b) => a.clientX - b.clientX);
-
-            if (sortedTouches.length >= 2) {
-                const leftTouch = sortedTouches[0];
-                const rightTouch = sortedTouches[1];
-
-                const initialLeftY = initialTouchPositions.get(leftTouch.identifier)?.y;
-                const currentLeftY = leftTouch.clientY;
-                const initialRightY = initialTouchPositions.get(rightTouch.identifier)?.y;
-                const currentRightY = rightTouch.clientY;
-
-                if (initialLeftY !== undefined && initialRightY !== undefined) {
-                    const deltaLeftY = currentLeftY - initialLeftY;
-                    const deltaRightY = currentRightY - initialRightY;
-
-                    const swipeThreshold = 50; // Pixels for a significant swipe
-                    const turnAmountForGesture = 0.1 / 3; // Specific turn amount for this gesture (reduced to 1/3)
-
-                    // Check for "Left touch up-swipe, Right touch down-swipe"
-                    if (deltaLeftY < -swipeThreshold && deltaRightY > swipeThreshold) {
-                        // Left finger moved up, Right finger moved down
-                        touchTurnAmount = -turnAmountForGesture; // Right turn (reversed for user's perception)
-                        gestureDetected = true; // Set flag
-                    }
-                    // Check for "Right touch up-swipe, Left touch down-swipe"
-                    else if (deltaRightY < -swipeThreshold && deltaLeftY > swipeThreshold) {
-                        // Right finger moved up, Left finger moved down
-                        touchTurnAmount = turnAmountForGesture; // Left turn (positive for user's perception)
-                        gestureDetected = true; // Set flag
-                    }
-                }
-            }
-
-            // Only apply general two-finger turning if no specific gesture was detected
-            if (!gestureDetected) {
-                const touch1 = touches[0];
-                const touch2 = touches[1];
-
-                const prevPos1 = lastTouchPositions.get(touch1.identifier);
-                const prevPos2 = lastTouchPositions.get(touch2.identifier);
-
-                if (prevPos1 && prevPos2) {
-                    // Calculate current and previous vectors between the two touches
-                    const currentVecX = touch2.clientX - touch1.clientX;
-                    const currentVecY = touch2.clientY - touch1.clientY;
-
-                    const prevVecX = prevPos2.x - prevPos1.x;
-                    const prevVecY = prevPos2.y - prevPos1.y;
-
-                    // Calculate the angle of the vectors
-                    const currentAngle = Math.atan2(currentVecY, currentVecX);
-                    const prevAngle = Math.atan2(prevVecY, prevVecX);
-
-                    let angleDelta = currentAngle - prevAngle;
-                    if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
-                    if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
-
-                    touchTurnAmount = angleDelta * 1.0; // Increased sensitivity for two-finger rotation (from 0.5 to 1.0)
-
-                    // Removed relativeDeltaX for general turning to simplify and avoid conflicts
-                    // const deltaX1 = touch1.clientX - prevPos1.x;
-                    // const deltaX2 = touch2.clientX - prevPos2.x;
-                    // const relativeDeltaX = deltaX1 - deltaX2;
-                    // touchTurnAmount += relativeDeltaX * 0.002; // Adjust sensitivity
-                }
-            }
-        }
+    // Turning Logic
+    const turnSensitivity = 0.0005; // Adjust as needed (reduced to 1/10 of original)
+    if (diffPower > 0) {
+        // RP > LP: Left turn (positive diffPower, so positive touchTurnAmount for left turn)
+        touchTurnAmount = diffPower * turnSensitivity;
+    } else if (diffPower < 0) {
+        // LP > RP: Right turn (negative diffPower, so negative touchTurnAmount for right turn)
+        touchTurnAmount = diffPower * turnSensitivity;
     }
-    
+
+    // Forward/Backward Movement Logic
+    const moveSensitivity = 0.01; // Adjust as needed
+    if (totalPower > 0) {
+        touchMoveForward = true;
+        // Speed proportional to totalPower
+        // The actual speed will be applied in animate() using currentMoveSpeed
+    } else if (totalPower < 0) {
+        touchMoveBackward = true;
+        // Speed proportional to abs(totalPower)
+    }
+
+    // Handle stationary turning (RP + LP = 0)
+    if (totalPower === 0 && diffPower !== 0) {
+        // Only turning, no forward/backward movement
+        touchMoveForward = false;
+        touchMoveBackward = false;
+    }
 }
 
 // Add event listeners to the renderer's DOM element
@@ -672,7 +593,6 @@ function animate() {
 
     const delta = clock.getDelta();
     const elapsedTime = clock.getElapsedTime();
-    const moveSpeed = 5.0;
 
     // Apply touch-based camera rotation
     camera.rotation.y += touchTurnAmount;
@@ -706,7 +626,13 @@ function animate() {
         rapidFireTimerElement.classList.remove('active');
     }
 
-    const currentMoveSpeed = speedUpActive ? moveSpeed * 2 : moveSpeed;
+    const baseMoveSpeed = 5.0; // Original moveSpeed
+    const powerScale = 0.05; // Adjust sensitivity for totalPower
+
+    let currentMoveSpeed = baseMoveSpeed + Math.abs(totalPower) * powerScale;
+    if (speedUpActive) {
+        currentMoveSpeed *= 2;
+    }
 
     const playerBox = new THREE.Box3().setFromCenterAndSize(
         new THREE.Vector3(camera.position.x, playerHeight / 2, camera.position.z),
