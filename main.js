@@ -78,74 +78,221 @@ createWall(0, 2, 12.5, 10, 4, 1);
 // プレイヤーの初期位置
 camera.position.set(0, 1.8, 20);
 
-// マウス操作のための変数
+// プレイヤーの移動と発射のための変数
 let moveForward = false;
 let moveBackward = false;
 let moveLeft = false;
 let moveRight = false;
-let isPaused = true; // ゲーム開始時は一時停止状態
-
-// 弾
 let isFiring = false;
 let lastFireTime = 0;
 const fireRate = 0.5;
 
-// マウスポインターロックの設定
-const blocker = document.getElementById('blocker');
-const instructions = document.getElementById('instructions');
+// --- Touch Control Variables ---
+const activeTouches = new Map(); // Map<identifier, Touch>
+const initialTouchPositions = new Map(); // Map<identifier, {x, y}> (for swipe detection)
+const lastTouchPositions = new Map(); // Map<identifier, {x, y}> (for continuous movement/rotation)
 
-instructions.addEventListener('click', function () {
-    document.body.requestPointerLock();
-});
+let touchTurnAmount = 0; // For camera rotation
+let touchMoveForward = false;
+let touchMoveBackward = false;
 
-document.addEventListener('pointerlockchange', lockChangeAlert, false);
-
-function lockChangeAlert() {
-    if (document.pointerLockElement === document.body) {
-        blocker.style.display = 'none';
-        document.addEventListener('mousemove', onMouseMove, false);
-        document.addEventListener('keydown', onKeyDown, false);
-        document.addEventListener('keyup', onKeyUp, false);
-        document.addEventListener('mousedown', onMouseDown, false);
-        document.addEventListener('mouseup', onMouseUp, false);
-        isPaused = false; // ロックされたらゲーム再開
-    } else {
-        blocker.style.display = 'flex';
-        document.removeEventListener('mousemove', onMouseMove, false);
-        document.removeEventListener('keydown', onKeyDown, false);
-        document.removeEventListener('keyup', onKeyUp, false);
-        document.removeEventListener('mousedown', onMouseDown, false);
-        document.removeEventListener('mouseup', onMouseUp, false);
-        isPaused = true; // ロック解除されたらゲーム一時停止
+// --- Touch Event Handlers ---
+function onTouchStart(event) {
+    event.preventDefault(); // Prevent default browser behavior like scrolling
+    
+    for (let i = 0; i < event.changedTouches.length; i++) {
+        const touch = event.changedTouches[i];
+        activeTouches.set(touch.identifier, touch);
+        initialTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+        lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+        
     }
+    updateTouchMovement();
 }
 
-// マウスの動き
-function onMouseMove(event) {
-    if (document.pointerLockElement === document.body) {
-        camera.rotation.y -= event.movementX * 0.002;
-        camera.rotation.x = 0;
+function onTouchMove(event) {
+    event.preventDefault();
+    
+    for (let i = 0; i < event.changedTouches.length; i++) {
+        const touch = event.changedTouches[i];
+        const prevPos = lastTouchPositions.get(touch.identifier);
+        if (prevPos) {
+            // Calculate delta for continuous movement/rotation
+            const deltaX = touch.clientX - prevPos.x;
+            const deltaY = touch.clientY - prevPos.y;
+            
+
+            }
+        activeTouches.set(touch.identifier, touch);
+        lastTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
     }
+    updateTouchMovement();
 }
 
-// キーボード入力
-function onKeyDown(event) {
-    switch (event.code) {
-        case 'KeyW': moveForward = true; break;
-        case 'KeyA': moveLeft = true; break;
-        case 'KeyS': moveBackward = true; break;
-        case 'KeyD': moveRight = true; break;
+function onTouchEnd(event) {
+    event.preventDefault();
+    
+    for (let i = 0; i < event.changedTouches.length; i++) {
+        const touch = event.changedTouches[i];
+        activeTouches.delete(touch.identifier);
+        initialTouchPositions.delete(touch.identifier);
+        lastTouchPositions.delete(touch.identifier);
+        
     }
+    updateTouchMovement();
 }
 
-function onKeyUp(event) {
-    switch (event.code) {
-        case 'KeyW': moveForward = false; break;
-        case 'KeyA': moveLeft = false; break;
-        case 'KeyS': moveBackward = false; break;
-        case 'KeyD': moveRight = false; break;
+function updateTouchMovement() {
+    
+    // Only reset movement flags if no touches are active
+    if (activeTouches.size === 0) {
+        touchMoveForward = false;
+        touchMoveBackward = false;
+        touchTurnAmount = 0; // Reset turn amount only when no touches
+        
+        return;
     }
+
+    const numActiveTouches = activeTouches.size;
+    
+
+    // Default to no movement, then set based on rules
+    touchMoveForward = false;
+    touchMoveBackward = false;
+    touchTurnAmount = 0; // Reset for this frame's calculation
+
+    if (numActiveTouches === 1) {
+        // Rule 1: Single touch for forward + turning
+        touchMoveForward = true;
+        
+
+        const touch = activeTouches.values().next().value; // Get the single active touch
+        const screenHalf = window.innerWidth / 2;
+        const turnSpeed = 0.05 / 3; // Fixed turning speed, adjust as needed (reduced to 1/3)
+
+        if (touch.clientX < screenHalf) {
+            // Left side touch: turn left (reversed)
+            touchTurnAmount = -turnSpeed; // Negative turnAmount for left turn
+            
+        } else {
+            // Right side touch: turn right (reversed)
+            touchTurnAmount = turnSpeed; // Positive turnAmount for right turn
+            
+        }
+    } else if (numActiveTouches >= 2) {
+        // Rule 1: Both sides touch for straight forward (default for two fingers)
+        touchMoveForward = true;
+        
+
+        // Rule 3: Two-finger swipe down for backward
+        let totalDeltaY = 0;
+        let allSwipedDown = true;
+        activeTouches.forEach((touch, id) => {
+            const initialPos = initialTouchPositions.get(id);
+            const currentPos = { x: touch.clientX, y: touch.clientY };
+            const deltaY = currentPos.y - initialPos.y;
+            totalDeltaY += deltaY;
+            if (deltaY < 20) { // Threshold for "swipe down"
+                allSwipedDown = false;
+            }
+        });
+
+        if (allSwipedDown && totalDeltaY > 40) { // Both fingers swiped down significantly
+            touchMoveForward = false;
+            touchMoveBackward = true;
+            
+        }
+
+        // Rule 2 & Combined Rules: Two-finger rotation/turning
+        const touches = Array.from(activeTouches.values());
+        if (touches.length >= 2) {
+            let gestureDetected = false; // Flag to indicate if a specific gesture is detected
+
+            // Sort touches by X-coordinate to reliably identify left and right fingers
+            const sortedTouches = Array.from(activeTouches.values()).sort((a, b) => a.clientX - b.clientX);
+
+            if (sortedTouches.length >= 2) {
+                const leftTouch = sortedTouches[0];
+                const rightTouch = sortedTouches[1];
+
+                const initialLeftY = initialTouchPositions.get(leftTouch.identifier)?.y;
+                const currentLeftY = leftTouch.clientY;
+                const initialRightY = initialTouchPositions.get(rightTouch.identifier)?.y;
+                const currentRightY = rightTouch.clientY;
+
+                if (initialLeftY !== undefined && initialRightY !== undefined) {
+                    const deltaLeftY = currentLeftY - initialLeftY;
+                    const deltaRightY = currentRightY - initialRightY;
+
+                    const swipeThreshold = 50; // Pixels for a significant swipe
+                    const turnAmountForGesture = 0.1 / 3; // Specific turn amount for this gesture (reduced to 1/3)
+
+                    // Check for "Left touch up-swipe, Right touch down-swipe"
+                    if (deltaLeftY < -swipeThreshold && deltaRightY > swipeThreshold) {
+                        // Left finger moved up, Right finger moved down
+                        touchTurnAmount = -turnAmountForGesture; // Right turn (reversed for user's perception)
+                        gestureDetected = true; // Set flag
+                    }
+                    // Check for "Right touch up-swipe, Left touch down-swipe"
+                    else if (deltaRightY < -swipeThreshold && deltaLeftY > swipeThreshold) {
+                        // Right finger moved up, Left finger moved down
+                        touchTurnAmount = turnAmountForGesture; // Left turn (positive for user's perception)
+                        gestureDetected = true; // Set flag
+                    }
+                }
+            }
+
+            // Only apply general two-finger turning if no specific gesture was detected
+            if (!gestureDetected) {
+                const touch1 = touches[0];
+                const touch2 = touches[1];
+
+                const prevPos1 = lastTouchPositions.get(touch1.identifier);
+                const prevPos2 = lastTouchPositions.get(touch2.identifier);
+
+                if (prevPos1 && prevPos2) {
+                    // Calculate current and previous vectors between the two touches
+                    const currentVecX = touch2.clientX - touch1.clientX;
+                    const currentVecY = touch2.clientY - touch1.clientY;
+
+                    const prevVecX = prevPos2.x - prevPos1.x;
+                    const prevVecY = prevPos2.y - prevPos1.y;
+
+                    // Calculate the angle of the vectors
+                    const currentAngle = Math.atan2(currentVecY, currentVecX);
+                    const prevAngle = Math.atan2(prevVecY, prevVecX);
+
+                    let angleDelta = currentAngle - prevAngle;
+                    if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
+                    if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
+
+                    touchTurnAmount = angleDelta * 1.0; // Increased sensitivity for two-finger rotation (from 0.5 to 1.0)
+
+                    // Removed relativeDeltaX for general turning to simplify and avoid conflicts
+                    // const deltaX1 = touch1.clientX - prevPos1.x;
+                    // const deltaX2 = touch2.clientX - prevPos2.x;
+                    // const relativeDeltaX = deltaX1 - deltaX2;
+                    // touchTurnAmount += relativeDeltaX * 0.002; // Adjust sensitivity
+                }
+            }
+        }
+    }
+    
 }
+
+// Add event listeners to the renderer's DOM element
+renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
+renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
+renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+renderer.domElement.addEventListener('touchcancel', onTouchEnd, { passive: false }); // Handle touch cancel as well
+
+// Initial game state: not paused for mobile
+let isPaused = false; // Game starts unpaused for mobile
+
+// onMouseDown/onMouseUp will be used for firing, but not for movement.
+// The existing onMouseDown/onMouseUp functions are fine for now.
+// We will need a separate touch-to-fire mechanism later.
+
 
 const clock = new THREE.Clock();
 const playerWidth = 0.5;
@@ -523,14 +670,13 @@ function fireBullet() {
 function animate() {
     requestAnimationFrame(animate);
 
-    if (isPaused) {
-        renderer.render(scene, camera);
-        return;
-    }
-
     const delta = clock.getDelta();
     const elapsedTime = clock.getElapsedTime();
     const moveSpeed = 5.0;
+
+    // Apply touch-based camera rotation
+    camera.rotation.y += touchTurnAmount;
+    camera.rotation.x = 0; // Ensure camera remains level
 
     // 難易度係数 (30秒ごとに10%上昇)
     const difficultyMultiplier = 1.0 + Math.floor(elapsedTime / 30) * 0.1;
@@ -575,12 +721,8 @@ function animate() {
     forward.y = 0;
     forward.normalize();
 
-    const right = _vector3.crossVectors(forward, camera.up).normalize();
-
-    if (moveForward) moveDirection.add(forward);
-    if (moveBackward) moveDirection.sub(forward);
-    if (moveRight) moveDirection.add(right);
-    if (moveLeft) moveDirection.sub(right);
+    if (touchMoveForward) moveDirection.add(forward);
+    if (touchMoveBackward) moveDirection.sub(forward);
 
     if (moveDirection.lengthSq() > 0) {
         moveDirection.normalize();
@@ -1046,6 +1188,13 @@ function animate() {
             items.splice(i, 1);
         }
     }
+}
+
+// Get the blocker element
+const blocker = document.getElementById('blocker');
+// Hide the blocker immediately for mobile
+if (blocker) {
+    blocker.style.display = 'none';
 }
 
 window.addEventListener('resize', () => {
