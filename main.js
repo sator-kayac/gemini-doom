@@ -861,13 +861,15 @@ function animate() {
                     }
 
                     // 敵の数を維持するため新しい敵を追加
-                    // 1体倒す事に2体スポーンする。最大10体。
-                    if (Math.random() < 0.3) { // 30%の確率でスポーン
+                    // 1体倒すと必ず1体スポーン
+                    if (enemies.length < 10) {
+                        spawnEnemy();
+                        enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+                    }
+                    // さらに30%の確率で追加で1体スポーン
+                    if (Math.random() < 0.3) {
                         if (enemies.length < 10) {
                             spawnEnemy();
-                            if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
-                                spawnEnemy();
-                            }
                             enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
                         }
                     }
@@ -1130,13 +1132,15 @@ function animate() {
                 scene.remove(enemy);
                 enemies.splice(j, 1);
                 // 敵の数を維持するため新しい敵を追加
-                // 1体倒す事に2体スポーンする。最大10体。
-                if (Math.random() < 0.3) { // 30%の確率でスポーン
+                // 1体倒すと必ず1体スポーン
+                if (enemies.length < 10) {
+                    spawnEnemy();
+                    enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+                }
+                // さらに30%の確率で追加で1体スポーン
+                if (Math.random() < 0.3) {
                     if (enemies.length < 10) {
                         spawnEnemy();
-                        if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
-                            spawnEnemy();
-                        }
                         enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
                     }
                 }
@@ -1217,13 +1221,15 @@ function animate() {
             scene.remove(enemy);
             dyingEnemies.splice(i, 1);
             // 敵の数を維持するため新しい敵を追加
-            // 1体倒す事に2体スポーンする。最大10体。
-            if (Math.random() < 0.3) { // 30%の確率でスポーン
+            // 1体倒すと必ず1体スポーン
+            if (enemies.length < 10) {
+                spawnEnemy();
+                enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+            }
+            // さらに30%の確率で追加で1体スポーン
+            if (Math.random() < 0.3) {
                 if (enemies.length < 10) {
                     spawnEnemy();
-                    if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
-                        spawnEnemy();
-                    }
                     enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
                 }
             }
@@ -1235,13 +1241,15 @@ function animate() {
             scene.remove(enemy);
             dyingEnemies.splice(i, 1);
             // 敵の数を維持するため新しい敵を追加
-            // 1体倒す事に2体スポーンする。最大10体。
-            if (Math.random() < 0.3) { // 30%の確率でスポーン
+            // 1体倒すと必ず1体スポーン
+            if (enemies.length < 10) {
+                spawnEnemy();
+                enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+            }
+            // さらに30%の確率で追加で1体スポーン
+            if (Math.random() < 0.3) {
                 if (enemies.length < 10) {
                     spawnEnemy();
-                    if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
-                        spawnEnemy();
-                    }
                     enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
                 }
             }

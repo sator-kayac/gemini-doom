@@ -1,7 +1,7 @@
 # Game Specification
 
 ## I. Overview
-This document outlines the current specifications for the game, focusing on mobile controls and automatic firing.
+This document outlines the current specifications for the game, focusing on mobile controls, automatic firing, and dynamic enemy difficulty.
 
 ## II. Mobile Controls (Analog Input)
 
@@ -70,3 +70,17 @@ The game features an automatic firing mechanism.
     *   `autoFireRate` is `0.2` seconds.
     *   If `rapidFireActive` (power-up), `autoFireRate` is halved.
 3.  **Targeting:** Fires at one enemy at a time within the cone.
+
+## IV. Enemy Spawning and Difficulty Scaling
+
+The game dynamically adjusts difficulty based on enemy spawns.
+
+1.  **Initial State:** The game starts with 4 enemies.
+2.  **Spawn Logic:**
+    *   When an enemy is defeated, at least one new enemy will spawn, up to a maximum of 10 enemies on the field.
+    *   There is a 30% chance that an additional enemy will spawn (totaling 2 new enemies).
+3.  **Difficulty Scaling:**
+    *   Each time a new enemy spawns, the following attributes for all subsequent enemies are scaled by a factor of `1.02`:
+        *   **HP:** `baseEnemyHp` and `baseShooterHp` are multiplied by `1.02`.
+        *   **Movement Speed:** `baseEnemySpeed` is multiplied by `1.02`.
+        *   **Fire Rate:** `baseEnemyFireRate` is divided by `1.02` (making it faster).
