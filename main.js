@@ -461,12 +461,12 @@ function spawnEnemy() {
     enemy.isShooter = isShooter;
 
     if (isShooter) {
-        enemy.hp = 2; // 赤は2発
-        enemy.maxHp = 2;
+        enemy.hp = Math.ceil(baseShooterHp * enemyStrengthMultiplier); // 赤は2発
+        enemy.maxHp = Math.ceil(baseShooterHp * enemyStrengthMultiplier);
         enemy.originalColor = new THREE.Color(0xff0000);
     } else {
-        enemy.hp = 3; // 緑は3発
-        enemy.maxHp = 3;
+        enemy.hp = Math.ceil(baseEnemyHp * enemyStrengthMultiplier); // 緑は3発
+        enemy.maxHp = Math.ceil(baseEnemyHp * enemyStrengthMultiplier);
         enemy.originalColor = new THREE.Color(0x00ff00);
     }
     enemy.flashTimer = 0; // 被弾フラッシュ用タイマー
@@ -538,7 +538,13 @@ function spawnEnemy() {
     enemies.push(enemy);
 }
 
-for (let i = 0; i < 8; i++) { // 初期敵数を8体に設定
+let enemyStrengthMultiplier = 1.0; // 敵の強化倍率
+let baseEnemyHp = 3; // 基本HP (緑の敵)
+let baseShooterHp = 2; // 基本HP (赤の敵)
+let baseEnemySpeed = 2.0; // 基本移動速度
+let baseEnemyFireRate = 2.0; // 基本射撃間隔 (秒)
+
+for (let i = 0; i < 4; i++) { // 初期敵数を4体に設定
     spawnEnemy();
 }
 
@@ -573,9 +579,28 @@ function spawnItem(position) {
     const item = new THREE.Mesh(itemGeometry, material);
     item.position.copy(position);
     item.position.y = 0.5;
+
+    const lightPillar = createLightPillar();
+    lightPillar.position.y = 0; // アイテムの原点に合わせる
+    item.add(lightPillar); // アイテムの子要素として追加
+
     item.itemType = itemType;
     scene.add(item);
     items.push(item);
+}
+
+function createLightPillar() {
+    const height = 20; // 高さを倍に
+    const geometry = new THREE.CylinderGeometry(0.1, 0.1, height, 8);
+    geometry.translate(0, height / 2, 0); // 底面が原点に来るようにずらす
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff, // 白い光
+        transparent: true,
+        opacity: 0.3,    // 半透明
+        side: THREE.DoubleSide // 両面描画
+    });
+    const pillar = new THREE.Mesh(geometry, material);
+    return pillar;
 }
 
 function createHealthBar() {
@@ -835,9 +860,16 @@ function animate() {
                         spawnItem(enemy.position.clone());
                     }
 
-                    // 敵の最大数を制限
-                    if (enemies.length < 8) { // 最大8体まで
-                        spawnEnemy();
+                    // 敵の数を維持するため新しい敵を追加
+                    // 1体倒す事に2体スポーンする。最大10体。
+                    if (Math.random() < 0.3) { // 30%の確率でスポーン
+                        if (enemies.length < 10) {
+                            spawnEnemy();
+                            if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
+                                spawnEnemy();
+                            }
+                            enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+                        }
                     }
                 } else {
                     // HPが残っている場合はフラッシュ
@@ -1020,7 +1052,7 @@ function animate() {
                 enemy.lookAt(camera.position.x, enemy.position.y, camera.position.z);
                 
                 // 敵を移動
-                const enemySpeed = 2.0 * difficultyMultiplier;
+                const enemySpeed = baseEnemySpeed * difficultyMultiplier * enemyStrengthMultiplier;
                 const moveStep = targetDirection.multiplyScalar(enemySpeed * delta);
                 const newPosition = enemy.position.clone().add(moveStep);
                 
@@ -1058,7 +1090,7 @@ function animate() {
                 enemy.lookAt(targetWorldX, enemy.position.y, targetWorldZ);
                 
                 // 敵を移動
-                const enemySpeed = 2.0 * difficultyMultiplier;
+                const enemySpeed = baseEnemySpeed * difficultyMultiplier * enemyStrengthMultiplier;
                 const moveStep = targetDirection.multiplyScalar(enemySpeed * delta);
                 const newPosition = enemy.position.clone().add(moveStep);
                 
@@ -1098,8 +1130,15 @@ function animate() {
                 scene.remove(enemy);
                 enemies.splice(j, 1);
                 // 敵の数を維持するため新しい敵を追加
-                if (enemies.length < 8) {
-                    spawnEnemy();
+                // 1体倒す事に2体スポーンする。最大10体。
+                if (Math.random() < 0.3) { // 30%の確率でスポーン
+                    if (enemies.length < 10) {
+                        spawnEnemy();
+                        if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
+                            spawnEnemy();
+                        }
+                        enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+                    }
                 }
                 continue; // 次の敵へ
             }
@@ -1108,7 +1147,7 @@ function animate() {
         // 射撃タイプの敵の処理
         if (enemy.isShooter) {
             const distanceToPlayer = enemy.position.distanceTo(camera.position);
-            const canShoot = elapsedTime - enemy.lastShotTime > 2.0; // 2秒に1回発射可能
+            const canShoot = elapsedTime - enemy.lastShotTime > (baseEnemyFireRate / enemyStrengthMultiplier); // 射撃間隔に強化倍率を適用
 
             if (distanceToPlayer < 20 && canShoot) { // プレイヤーが20単位以内にいる場合
                 const firePosition = enemy.position.clone();
@@ -1178,8 +1217,15 @@ function animate() {
             scene.remove(enemy);
             dyingEnemies.splice(i, 1);
             // 敵の数を維持するため新しい敵を追加
-            if (enemies.length < 8) {
-                spawnEnemy();
+            // 1体倒す事に2体スポーンする。最大10体。
+            if (Math.random() < 0.3) { // 30%の確率でスポーン
+                if (enemies.length < 10) {
+                    spawnEnemy();
+                    if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
+                        spawnEnemy();
+                    }
+                    enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+                }
             }
             continue; // 次の敵の処理へ
         }
@@ -1189,8 +1235,15 @@ function animate() {
             scene.remove(enemy);
             dyingEnemies.splice(i, 1);
             // 敵の数を維持するため新しい敵を追加
-            if (enemies.length < 8) {
-                spawnEnemy();
+            // 1体倒す事に2体スポーンする。最大10体。
+            if (Math.random() < 0.3) { // 30%の確率でスポーン
+                if (enemies.length < 10) {
+                    spawnEnemy();
+                    if (enemies.length < 10) { // 2体目をスポーンさせる前に再度チェック
+                        spawnEnemy();
+                    }
+                    enemyStrengthMultiplier *= 1.02; // 敵がスポーンするたびに強化
+                }
             }
         }
     }

@@ -135,11 +135,16 @@ self.onmessage = function(e) {
         const startZ = Math.floor((wall.z - wall.halfDepth + GRID_OFFSET) / CELL_SIZE);
         const endZ = Math.floor((wall.z + wall.halfDepth + GRID_OFFSET) / CELL_SIZE);
 
-        for (let i = startX; i < endX; i++) {
-            for (let j = startZ; j < endZ; j++) {
-                if (i >= 0 && i < GRID_SIZE && j >= 0 && j < GRID_SIZE) {
-                    grid[i][j].walkable = false; // Mark as non-walkable
-                }
+        // ループの範囲をGRID_SIZE内に制限する
+        const loopStartX = Math.max(0, startX);
+        const loopEndX = Math.min(GRID_SIZE, endX);
+        const loopStartZ = Math.max(0, startZ);
+        const loopEndZ = Math.min(GRID_SIZE, endZ);
+
+        for (let i = loopStartX; i < loopEndX; i++) {
+            for (let j = loopStartZ; j < loopEndZ; j++) {
+                // ここでは既に範囲内であることが保証されている
+                grid[i][j].walkable = false; // Mark as non-walkable
             }
         }
     }
